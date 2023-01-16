@@ -1,0 +1,105 @@
+---
+title: "R_Demo_Crime_Punishment"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r load-packages, message=FALSE, warning=FALSE, include=FALSE}
+library(MASS)
+library(BAS)
+library(GGally)
+```
+
+```{r, echo=FALSE}
+data("UScrime")
+UScrime[,-2]=log(UScrime[,-2])
+crime.ZS=bas.lm(y ~ ., data=UScrime, prior="ZS-null", modelprior=uniform(), method="MCMC")
+
+```
+
+```{r, echo=FALSE}
+diagnostics(crime.ZS)
+
+```
+
+```{r, echo=FALSE}
+plot(crime.ZS, which=1, add.smooth = F)
+
+```
+
+```{r, echo=FALSE}
+plot(crime.ZS, which=2, add.smooth = F)
+
+```
+
+```{r, echo=FALSE}
+plot(crime.ZS, which=3)
+
+```
+
+```{r, echo=FALSE}
+plot(crime.ZS, which=4)
+
+```
+
+```{r, echo=FALSE}
+image(crime.ZS, rotate=F)
+
+```
+
+
+```{r, echo=FALSE}
+coef.ZS=coef(crime.ZS)
+plot(coef.ZS, subset=c(5:6), ask = F)
+
+```
+
+
+```{r, echo=FALSE}
+#highest probability model:
+HPM <- predict(crime.ZS, estimator = "HPM")
+# show the indices of variables in the best model where 0 is the intercept
+HPM$bestmodel
+variable.names(HPM)
+```
+
+```{r, echo=FALSE}
+#median probability model:
+MPM <- predict(crime.ZS, estimator = "MPM")
+variable.names(MPM)
+```
+
+```{r, echo=FALSE}
+#best predictive model:
+BPM <- predict(crime.ZS, estimator = "BPM")
+variable.names(BPM)
+```
+
+```{r, echo=FALSE}
+#Bayesian Model Averaging  
+BMA<-predict(crime.ZS, estimator = "BMA")
+variable.names(BMA)
+```
+
+```{r, echo=FALSE, warning=FALSE}
+#Let’s see how they compare:
+GGally::ggpairs(data.frame(
+  HPM = as.vector(HPM$fit), # this used predict so we need to extract fitted values
+  MPM = as.vector(MPM$fit), # this used fitted
+  BPM = as.vector(BPM$fit), # this used fitted
+  BMA = as.vector(BMA$fit))) # this used predict
+```
+
+
+
+
+
+
+
+
+
+
+

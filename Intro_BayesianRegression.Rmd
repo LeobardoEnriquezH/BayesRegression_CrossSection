@@ -1,0 +1,1176 @@
+---
+title: "Intro_BayesianRegression"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Chapter 6 Introduction to Bayesian Regression
+https://statswithr.github.io/book/introduction-to-bayesian-regression.html
+
+In this chapter, we will apply Bayesian inference methods to linear regression. We will first apply Bayesian statistics to simple linear regression models, then generalize the results to multiple linear regression models. We will see when using the reference prior, the posterior means, posterior standard deviations, and credible intervals of the coefficients coincide with the counterparts in the frequentist ordinary least square (OLS) linear regression models. However, using the Bayesian framework, we can now interpret credible intervals as the probabilities of the coefficients lying in such intervals. 
+
+## 6.1 Bayesian Simple Linear Regression
+
+In this section, we will turn to Bayesian inference in simple linear regressions. We will use the reference prior distribution on coefficients, which will provide a connection between the frequentist solutions and Bayesian answers. This provides a baseline analysis for comparisons with more informative prior distributions. To illustrate the ideas, we will use an example of predicting body fat.
+
+### 6.1.1 Frequentist Ordinary Least Square (OLS) Simple Linear Regression
+
+Obtaining accurate measurements of body fat is expensive and not easy to be done. Instead, predictive models that predict the percentage of body fat which use readily available measurements such as abdominal circumference are easy to use and inexpensive. We will apply a simple linear regression to predict body fat using abdominal circumference as an example to illustrate the Bayesian approach of linear regression. 
+
+The data set **bodyfat** can be found from the library **BAS**.
+
+To start, we load the **BAS** library (which can be downloaded from CRAN) to access the dataframe. We print out a summary of the variables in this dataframe.
+
+```{r}
+library(BAS)
+data(bodyfat)
+summary(bodyfat)
+```
+
+This data frame includes 252 observations of men’s body fat and other measurements, such as waist circumference ( `Abdomen`). We will construct a Bayesian model of simple linear regression, which uses Abdomen to predict the response variable `Bodyfat`. 
+
+Let $y_i$,  $i=1,...,252$ denote the measurements of the response variable `Bodyfat` and let $x_i$ be the waist circumference measurements `Abdomen`. We regress `Bodyfat` on the predictor `Abdomen`. This regression model can be formulated as
+
+$$y_i=\alpha + \beta x_i + \epsilon_i, \hspace{2cm}  i=1,...,52$$ 
+
+
+Here, we assume error $\epsilon_i$ is independent and identically distributed as normal random variables with mean $\mu$ zero and constant variance $\sigma^2$ 
+
+$$\epsilon_i \stackrel{iid}{\sim} Normal (0,\sigma^2)$$
+
+The figure below shows the percentage body fat obtained from under water weighing and the abdominal circumference measurements for 252 men. To predict body fat, the line overlayed on the scatter plot illustrates the best fitting ordinary least squares (OLS) line obtained with the  `lm` function in R. 
+
+```{r}
+# Frequentist OLS linear regression
+bodyfat.lm = lm(Bodyfat ~ Abdomen, data = bodyfat)
+summary(bodyfat.lm)
+```
+
+```{r}
+# Extract coefficients
+beta = coef(bodyfat.lm)
+
+# Visualize regression line on the scatter plot
+library(ggplot2)
+ggplot(data = bodyfat, aes(x = Abdomen, y = Bodyfat)) +
+  geom_point(color = "blue") +
+  geom_abline(intercept = beta[1], slope = beta[2], linewidth = 1) +
+  xlab("abdomen circumference (cm)") 
+```
+
+From the summary, we see that this model has an estimated slope $\hat{\beta}$ of 0.63 and an estimated $y$-intercept $\hat{\alpha}$ of about -39.28%. This gives us the prediction formula
+
+$$\widehat{Bodyfat} = -39.28 + 0.63 \times Adomen $$
+
+For every additional centimeter, we expect body fat to increase by 0.63%. The negative $y$-intercept of course does not make sense as a physical model, but neither does predicting a male with a waist of zero centimeters. Nevertheless, this linear regression may be an accurate approximation for prediction purposes for measurements that are in the observed range for this population.
+
+Each of the residuals, which provide an estimate of the fitting error, is equal to $\hat{\epsilon}_i= y_i - \hat{y_i}$, the difference between the observed value $y_i$ and the fitted value $\hat{y_i}=\hat{\alpha}+\hat{\beta}x_i$, where $x_i$ is the abdominal circumference for the $i$th male. The $\hat{\epsilon}_i$ is used for diagnostics as well as estimating the constant variance in the assumption of the model $\sigma^2$ via the mean squared error (MSE):
+
+$$\hat{\sigma}^2=\frac{1}{n-2}\sum_{i}^{n}(y_i - \hat{y_i})^2= \frac{1}{n-2}\sum_{i}^{n} \hat{\epsilon}_i^2$$
+
+Here the *degrees of freedom* $n-2$ are the number of observations adjusted for the number of parameters (which is 2) that we estimated in the regression. 
+
+
+The MSE, $\hat{\sigma}^2$, may be calculated through squaring the residuals of the output of  `bodyfat.lm`.
+
+```{r}
+# Obtain residuals and n
+resid = residuals(bodyfat.lm)
+n = length(resid)
+
+# Calculate MSE
+MSE = 1/ (n - 2) * sum((resid ^ 2))
+MSE
+```
+
+If this model is correct, the residuals and fitted values should be uncorrelated, and the expected value of the residuals is zero. We apply the scatterplot of residuals versus fitted values, which provides an additional visual check of the model adequacy.
+
+```{r}
+# Combine residuals and fitted values into a data frame
+result = data.frame(fitted_values = fitted.values(bodyfat.lm),
+                    residuals = residuals(bodyfat.lm))
+
+# Load library and plot residuals versus fitted values
+library(ggplot2)
+ggplot(data = result, aes(x = fitted_values, y = residuals)) +
+  geom_point(pch = 1, size = 2) + 
+  geom_abline(intercept = 0, slope = 0) + 
+  xlab(expression(paste("fitted value ", widehat(Bodyfat)))) + 
+  ylab("residuals")
+```
+
+
+
+
+With the exception of one observation for the individual with the largest fitted value, the residual plot suggests that this linear regression is a reasonable approximation. The case number of the observation with the largest fitted value can be obtained using the which function in R. Further examination of the data frame shows that this case also has the largest waist measurement  `Abdomen`. This may be our potential outlier. 
+
+
+```{r}
+# Find the observation with the largest fitted value
+which.max(as.vector(fitted.values(bodyfat.lm)))
+```
+
+```{r}
+# Shows this observation has the largest Abdomen
+which.max(bodyfat$Abdomen)
+```
+
+Furthermore, we can check the normal probability plot of the residuals for the assumption of normally distributed errors. We see that only Case 39, the one with the largest waist measurement, is exceptionally away from the normal quantile.
+
+```{r}
+plot(bodyfat.lm, which = 2)
+```
+
+The confidence interval of $\alpha$ and $\beta$ can be constructed using the standard errors  $se_{\alpha}$ and $se_{\beta}$ respectively. To proceed, we introduce notations of some “sums of squares”
+
+$$S_{xx}=\sum_{i}^{n}(x_i-\bar{x})^2$$
+$$S_{yy}=\sum_{i}^{n}(y_i-\bar{y})^2$$
+$$S_{xy}=\sum_{i}^{n}(x_i-\bar{x})(y_i-\bar{y})$$
+$$SSE=\sum_{i}^{n}(y_i-\hat{y}_i)^2=\sum_{i}^{n} \hat{\epsilon}_i^2$$
+
+
+The estimates of the $y$-intercept $\alpha$, and the slope $\beta$, which are denoted as $\hat{\alpha}$ and  $\hat{\beta}$ respectively, can be calculated using these “sums of squares”
+
+$$\hat{\beta}=\frac{S_{xy}}{S_{xx}}=\frac{\sum_{i}^{n}(x_i-\bar{x})(y_i-\bar{y})}{\sum_{i}^{n}(x_i-\bar{x})^2}$$
+
+
+$$\hat{\alpha}=\bar{y}-\frac{S_{xy}}{S_{xx}}\bar{x}=\bar{y}-\hat{\beta}\bar{x}$$
+
+The last “sum of square” is the *sum of squares of errors* (SSE). Its sample mean is exactly the mean squared error (MSE) we introduced previously 
+
+
+$$\hat{\sigma}^2=\frac{SSE}{n-2}=MSE$$
+
+The standard errors,$se_{\alpha}$ and $se_{\beta}$, are given as
+
+$$se_{\alpha}=\sqrt{\frac{SSE}{n-2}(\frac{1}{n} + \frac{\bar{x}^2}{S_{xx}})} = \hat{\sigma} \sqrt{\frac{1}{n}+\frac{\bar{x}}{S_{xx}}}$$
+
+
+$$se_{\beta} =\sqrt{\frac{SSE}{n-2}(\frac{1}{S_{xx}})} = \frac{\hat{\sigma}}{\sqrt{S_{xx}}}$$
+
+
+We may construct the confidence intervals of $\alpha$ and $\beta$ using the $t$-statistics with $n-2$ degrees of freedom
+
+$t_{\alpha}^*=\frac{\alpha-\hat{\alpha}}{se_{\alpha}}, \hspace{2cm} t_{\beta}^*=\frac{\beta-\hat{\beta}}{se_{\beta}}$
+
+
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+
+### 6.1.2 Bayesian Simple Linear Regression Using the Reference Prior
+
+
+Let us now turn to the *Bayesian* version and show that under the **reference prior**, we will obtain the **posterior distributions** of $\alpha$ and $\beta$ analogous with the *frequentist* **OLS** results.
+
+The Bayesian model starts with the same model as the classical frequentist approach
+
+$$y_i=\alpha + \beta x_i + \epsilon_i, \hspace{2cm}  i=1,...,n$$ 
+
+with the assumption that the errors,$\epsilon_i$, are independent and identically distributed as normal random variables with mean zero and constant variance $\sigma^2$. This assumption is exactly the same as in the classical inference case for testing and constructing confidence intervals for $\alpha$ and $\beta$. 
+
+Our goal is to **update the distributions** of the unknown parameters $\alpha$, $\beta$ and $\sigma^2$, based on the **data** $x_1,...,x_n$ and $y_1,...,y_n$, where $n$ is the number of observations. 
+
+Under the assumption that the errors $\epsilon_i$ are normally distributed with constant variance $\sigma^2$, we have for the random variable of each response $Y_i$, conditioning on the observed data $x_i$ and the parameters $\alpha$, $\beta$ and $\sigma^2$, is normally distributed:
+
+$$Y_i | x_i, \alpha, \beta, \sigma^2 \sim Normal (\alpha+\beta x_i, \sigma^2), \hspace{1cm} i=1,..,n$$
+That is, the **likelihood** of each $Y_i$ given $x_i$, $\alpha$, $\beta$ and $\sigma^2$ is given by
+
+
+$$p(y_i | x_i, \alpha, \beta, \sigma^2)=\frac{1}{\sqrt{2\pi \sigma^2}} e^{- \frac{(y_i-(\alpha+\beta x_i))^2}{2\sigma^2}}$$
+
+The likelihood of $Y_i,...,Y_n$ is the *product* of each likelihood $p(y_i | x_i, \alpha, \beta, \sigma^2)$, since we assume each response $Y_i$ is **independent** from each other. 
+
+
+Since this likelihood depends on the values of $\alpha$, $\beta$ and $\sigma^2$, it is sometimes denoted as a function $L (\alpha, \beta, \sigma^2)$ 
+
+We *first* consider the case under the **reference prior**, which is our standard **noninformative prior**. 
+
+Using the **reference prior**, we will obtain familiar distributions as the **posterior distributions** of $\alpha$, $\beta$ and $\sigma^2$, which gives the analogue to the *frequentist* results. 
+
+
+Here we assume the joint **prior distribution** of $\alpha$, $\beta$ and $\sigma^2$ to be *proportional* to the inverse of $\sigma^2$: 
+
+$$p(\alpha, \beta, \sigma^2) \propto \frac{1}{\sigma^2} $$
+
+
+Using the *hierachical model framework*, this is equivalent to assuming that the *joint prior distribution* of $\alpha$ and $\beta$ under $\sigma^2$ is the uniform prior, while the prior distribution of $\sigma^2$ is proportional to $\frac{1}{\sigma^2}$. That is
+
+$$p(\alpha, \beta | \sigma^2) \propto 1, \hspace{1cm} p(\sigma^2) \propto \frac{1}{\sigma^2}$$
+
+Combining the two using conditional probability, we will get the same joint prior distribution $p(\alpha, \beta, \sigma^2) \propto \frac{1}{\sigma^2}$. 
+
+
+Then we apply the Bayes’ rule to derive the joint posterior distribution after observing data $y_1,...,y_n$.
+
+Bayes’ rule states that the **joint posterior distribution** of $\alpha$, $\beta$ and $\sigma^2$ is *proportional* to the *product* of the **likelihood** and the **joint prior distribution**: 
+
+
+$$p^*(\alpha, \beta, \sigma^2 | y_1,...,y_n) \propto [ \prod_i^n p (y_i | x_i, \alpha,\beta, \sigma^2) ]\times [p(\alpha, \beta, \sigma^2)]$$
+
+$$ \propto [ (\frac{1}{\sqrt{2\pi \sigma^2}} e^{- \frac{(y_1-(\alpha+\beta x_1))^2}{2\sigma^2}}) \times ... \times (\frac{1}{\sqrt{2\pi \sigma^2}} e^{- \frac{(y_n-(\alpha+\beta x_n))^2}{2\sigma^2}})  ] \times [\frac{1}{\sigma^2}]  $$
+
+$$ \propto [ (\frac{1}{\sqrt{ \sigma^2}} e^{- \frac{(y_1-(\alpha+\beta x_1))^2}{2\sigma^2}}) \times ... \times (\frac{1}{\sqrt{ \sigma^2}} e^{- \frac{(y_n-(\alpha+\beta x_n))^2}{2\sigma^2}})  ] \times [\frac{1}{\sigma^2}]  $$
+
+
+$$\propto \frac{1}{(\sqrt{ \sigma^2})^{n+2}} e^{- \frac{(y_i-(\alpha+\beta x_i))^2}{2\sigma^2}}$$
+
+To obtain the marginal posterior distribution of $\beta$, we need to integrate $\alpha$ and $\sigma^2$ out from the joint posterior distribution 
+
+$$p^*(\beta|y_1,...,y_n)  = \int_0^{\infty} [ \int_{- \infty}^{\infty}  p^*(\alpha, \beta, \sigma^2 | y_{1},...,y_n)d\alpha ] d\sigma^2 $$ 
+
+We leave the detailed calculation in Annex section. It can be shown that the marginal posterior distribution of $\beta$ is the Student’s $t$-distribution
+
+$$\beta | y_1,...,y_n \sim t (n-2, \hat{\beta}, \frac{\hat{\sigma}^2}{S_{xx}}) = t(n-2, \hat{\beta}, (se_{\beta})^2)$$
+
+
+with degrees of freedom $n-2$, center at $\hat{\beta}$, the slope estimate we obtained from the frequentist OLS model, and scale parameter $(se_{\beta})^2$, which is the square of the standard error of $\hat{\beta}$ under the frequentist OLS model.
+
+
+*Similarly*, we can integrate out $\beta$ and $\sigma^2$ from the joint posterior distribution to get the marginal posterior distribution of $\alpha$
+
+$$p^*(\alpha|y_1,...,y_n)  = \int_0^{\infty} [ \int_{- \infty}^{\infty}  p^*(\alpha, \beta, \sigma^2 | y_{1},...,y_n)d\beta ] d\sigma^2 $$ 
+
+It turns out that $p^*(\alpha|y_1,...,y_n)$ is again a Student’s $t$-distribution, with degrees of freedom $n-2$, center at $\hat{\alpha}$, the $y$-intercept estimate from the frequentist OLS model, and scale parameter $(se_{\alpha})^2$, which is the square of the standard error of $\hat{\alpha}$ under the frequentist OLS model 
+
+$$\alpha | y_1,...,y_n \sim t (n-2, \hat{\alpha},\hat{\sigma}^2 (\frac{1}{n}+ \frac{\bar{x}^2}{S_{xx}})) = t(n-2, \hat{\beta}, (se_{\alpha})^2)$$
+
+*Finally*, we can show that the marginal posterior distribution of $\sigma^2$ is the inverse Gamma distribution, or equivalently, the reciprocal of $\sigma^2$, which is the precision $\phi$, follows the Gamma distribution
+
+$$\phi =\frac{1}{\sigma^2} | y_1,...,y_n \sim Gamma (\frac{n-2}{2}, \frac{SEE}{2})$$
+
+Moreover, similar to the Normal-Gamma conjugacy under the reference prior introduced in some other examples, the joint posterior distribution of $\beta, \sigma^2$, and the joint posterior distribution of $\alpha, \sigma^2$ are both Normal-Gamma. 
+
+
+In particular, the posterior distribution of $\beta$ conditioning on $\sigma^2$ is
+
+$$\beta|\sigma^2, data \sim Normal(\hat{\beta}, \frac{\sigma^2}{S_{xx}})$$
+
+and the posterior distribution of  $\alpha$ conditioning on $\sigma^2$ is
+ 
+
+$$\alpha|\sigma^2, data \sim Normal(\hat{\alpha},  \sigma ^2 (\frac{1}{n}+ \frac{\bar{x}^2}{S_{xx}})$$
+
+
+**Credible Intervals for Slope** $\beta$ **and** $y$**-intercept** $\alpha$
+
+
+
+
+The Bayesian posterior distribution results of  $\alpha$ and $\beta$ show that under the reference prior, the posterior credible intervals are in fact numerically equivalent to the confidence intervals from the classical frequentist OLS analysis. 
+
+This provides a baseline analysis for other Bayesian analyses with other informative prior distributions or perhaps other “objective” prior distributions, such as the Cauchy distribution. (Cauchy distribution is the Student’s  $t$ prior with 1 degree of freedom). 
+
+Since the credible intervals are numerically the same as the confidence intervals, we can use the `lm` function to obtain the OLS estimates and construct the credible intervals of $\alpha$ and $\beta$. 
+
+```{r}
+output = summary(bodyfat.lm)$coef[, 1:2]
+output
+```
+
+
+The columns labeled `Estimate` and `Std. Error` are equivalent to the centers (or posterior means) and scale parameters (or standard deviations) in the two Student’s $t$-distributions respectively. 
+
+
+The credible intervals of $\alpha$ and $\beta$ are the same as the frequentist confidence intervals, but now we can interpret them from the Bayesian perspective. 
+
+The `confint` function provides 95% **confidence intervals**. Under the reference prior, they are equivalent to the 95% **credible intervals**. The code below extracts them and relabels the output as the Bayesian results.
+
+```{r}
+out = cbind(output, confint(bodyfat.lm))
+colnames(out) = c("posterior mean", "posterior std", "2.5", "97.5")
+round(out, 2)
+```
+
+
+These intervals coincide with the confidence intervals from the frequentist approach. The primary difference is the *interpretation*. For example, based on the data, we believe that there is a 95% chance that body fat will increase by 5.8% up to 6.9% for every additional 10 centimeter increase in the waist circumference.
+
+
+
+
+**Credible intervals for the Mean** $\mu_Y$ **and the Prediction** $y_{n+1}$.
+
+
+From our assumption of the model
+
+$$y_i=\alpha + \beta x_i + \epsilon_i, \hspace{2cm}  i=1,...,n$$ 
+
+the mean of the response variable $Y$, $\mu_Y$, at the point $x_i$ is
+
+$$\mu_Y | x_i = E[Y|x_i]=\alpha+\beta x_i$$
+
+Under the reference prior, $\mu_Y$  has a posterior distributuion 
+
+$$\alpha+\beta x_i | data \sim t (n-2, \hat{\alpha}+\hat{\beta}x_i, S_{Y|X_i}^2)$$, 
+
+
+where 
+
+$$S_{Y|X_i}^2 =\hat{\sigma}^2 (\frac{1}{n} + \frac{(x_i-\hat{x})^2}{S_{xx}})$$
+
+Any new prediction $y_{n+1}$ at a point $x_{n+1}$ also follows the Student’s $t$-distribution
+
+$$y_{n+1}| data, x_{n+1} \sim t(n-2, \hat{\alpha}+\hat{\beta}x_{n+1}, S_{Y|X_{n+1}}^2)$$
+
+where
+
+$$S_{Y|X_{n+1}}^2 =\hat{\sigma}^2+\hat{\sigma}^2 (\frac{1}{n} + \frac{(x_{n+1}-\hat{x})^2}{S_{xx}})= \hat{\sigma}^2 (1+\frac{1}{n} + \frac{(x_{n+1}-\hat{x})^2}{S_{xx}})$$
+
+The variance for predicting a new observation $y_{n+1}$ has an extra $\hat{\sigma}^2$ which comes from the uncertainty of a new observation about the mean $\mu_Y$ estimated by the regression line. 
+
+We can extract these intervals using the `predict` function
+
+
+
+
+```{r}
+library(ggplot2)
+# Construct current prediction
+alpha = bodyfat.lm$coefficients[1]
+beta = bodyfat.lm$coefficients[2]
+new_x = seq(min(bodyfat$Abdomen), max(bodyfat$Abdomen), 
+            length.out = 100)
+y_hat = alpha + beta * new_x
+
+# Get lower and upper bounds for mean
+ymean = data.frame(predict(bodyfat.lm,
+                            newdata = data.frame(Abdomen = new_x),
+                            interval = "confidence",
+                            level = 0.95))
+
+# Get lower and upper bounds for prediction
+ypred = data.frame(predict(bodyfat.lm,
+                          newdata = data.frame(Abdomen = new_x),
+                          interval = "prediction",
+                          level = 0.95))
+
+output = data.frame(x = new_x, y_hat = y_hat, ymean_lwr = ymean$lwr, ymean_upr = ymean$upr, 
+                    ypred_lwr = ypred$lwr, ypred_upr = ypred$upr)
+
+# Extract potential outlier data point
+outlier = data.frame(x = bodyfat$Abdomen[39], y = bodyfat$Bodyfat[39])
+
+# Scatter plot of original
+plot1 = ggplot(data = bodyfat, aes(x = Abdomen, y = Bodyfat)) + geom_point(color = "blue")
+
+# Add bounds of mean and prediction
+plot2 = plot1 + 
+  geom_line(data = output, aes(x = new_x, y = y_hat, color = "first"), lty = 1) +
+  geom_line(data = output, aes(x = new_x, y = ymean_lwr, lty = "second")) +
+  geom_line(data = output, aes(x = new_x, y = ymean_upr, lty = "second")) +
+  geom_line(data = output, aes(x = new_x, y = ypred_upr, lty = "third")) +
+  geom_line(data = output, aes(x = new_x, y = ypred_lwr, lty = "third")) + 
+  scale_colour_manual(values = c("orange"), labels = "Posterior mean", name = "") + 
+  scale_linetype_manual(values = c(5, 3), labels = c( "95% CI for mean", "95% CI for predictions")
+                        , name = "") + 
+  theme_bw() + 
+  theme(legend.position = c(1, 0), legend.justification = c(1.5, 0))
+
+# Identify potential outlier
+plot2 + geom_point(data = outlier, aes(x = x, y = y), color = "orange", pch = 1, cex = 6)
+```
+
+
+
+Note in the above plot, the legend “CI” can mean either confidence interval or credible interval. The difference comes down to the interpretation. For example, the prediction at the same abdominal circumference as in Case 39 is
+
+```{r}
+pred.39 = predict(bodyfat.lm, newdata = bodyfat[39, ], interval = "prediction", level = 0.95)
+out = cbind(bodyfat[39,]$Abdomen, pred.39)
+colnames(out) = c("abdomen", "prediction", "lower", "upper")
+out
+```
+
+Based on the data, a Bayesian would expect that a man with waist circumference of 148.1 centimeters should have bodyfat of 54.216% with a 95% probability that it is between 44.097% and 64.335%.
+
+
+While we expect the majority of the data will be within the prediction intervals (the short dashed grey lines), Case 39 seems to be well below the interval. We next use Bayesian methods in Section 6.2 to calculate the probability that this case is abnormal or is an outlier by falling more than $k$ standard deviations from either side of the mean.
+
+
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+### 6.1.3 Informative Priors
+
+Except from the **noninformative reference prior** (as before), we may also consider using a more general **semiconjugate prior distribution** of $\alpha$, $\beta$ and $\sigma^2$ when there is information available about the parameters. 
+
+Since the data $y_1,...,y_n$ are normally distributed, a **Normal-Gamma distribution** will form a **conjugacy** in this situation. We then set up **prior distributions** through a **hierarchical model**.
+
+We first assume that (given $\sigma^2$) $\alpha$ and $\beta$ together follow the **bivariate normal prior distribution**, from which their marginal distributions are both normal,
+
+$$\alpha | \sigma^2 \sim Normal(\alpha_0, \sigma^2 S_{\alpha})$$
+
+$$\beta | \sigma^2 \sim Normal(\beta_0, \sigma^2 S_{\beta})$$
+with covariance
+
+$$ Cov(\alpha, \beta | \sigma^2)=\sigma^2S_{\alpha \beta} $$
+
+
+Here, $\sigma^2$, $S_{\alpha}$, $S_{\beta}$, $S_{\alpha \beta}$ are hyperparameters.
+
+
+
+This is equivalent to setting the coefficient vector $\beta=(\alpha,\beta)^T$ to have a bivariate normal distribution with covariance matrix 
+
+$$\sum_0 = \sigma^2 ( \begin{equation}
+\begin{matrix}
+S_{\alpha} & S_{\alpha \beta}\\
+S_{\beta \alpha} & S_{\beta}
+\end{matrix}
+\end{equation})$$. 
+
+That is,
+
+$$\beta(\alpha,\beta)^T | \sigma^2 \sim BivariateNormal(b=(a_0,b_0)^T, \sigma^2\Sigma_{0})$$
+
+Then for $\sigma^2$, we will impose an inverse Gamma distribution as its prior distribution 
+
+$$\frac{1}{\sigma^2} \sim Gamma(\frac{v_0}{2}, \frac{v_0\sigma_0}{2})$$
+
+Now the joint prior distribution of $\sigma^2$) $\alpha$ and $\beta$ form a distribution that is analogous to the Normal-Gamma distribution.  
+
+Prior information about $\sigma^2$) $\alpha$ and $\beta$  are encoded in the hyperparameters $a_0$,$b_0$ $S_{\alpha}$, $S_{\beta}$, $S_{\alpha \beta}$, $v_0$ and $\sigma_0$. 
+
+The marginal posterior distribution of the coefficient vector $\beta(\alpha,\beta)$ will be bivariate normal, and the marginal posterior distribution of $\sigma^2$ is again an inverse Gamma distribution
+
+
+$$\frac{1}{\sigma^2} | y_1,...,y_n \sim Gamma(\frac{v_0+n}{2}, \frac{v_0\sigma_0^2+SSE}{2})$$
+
+One can see that the **reference prior** is the limiting case of this **conjugate prior** we impose. 
+
+
+We usually use **Gibbs sampling** to approximate the **joint posterior distribution** instead of using the result directly, especially when we have more regression coefficients in multiple linear regression models.
+
+We omit the derivation of the **posterior distributions** due to the heavy use of advanced linear algebra. One can refer to Hoff (2009) for more details. 
+
+Based on any prior information we have for the model, we can also impose other priors and assumptions on $\sigma^2$) $\alpha$ and $\beta$ to get different Bayesian results. 
+
+Most of these **priors** will not form any **conjugacy** and will require us to use simulation methods such as Markov Chain Monte Carlo (MCMC) for approximations. 
+
+We will introduce the general idea of MCMC in Chapter 8. 
+
+
+
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+## 6.2 Checking Outliers
+
+The code for calculating the probability of outliers involves integration. We have implemented this in the function `Bayes.outlier` from the `BAS` package. This function takes an `lm` object and the value of $k$ as arguments. Applying this to the bodyfat data for Case 39, we get 
+
+
+```{r}
+outliers = Bayes.outlier(bodyfat.lm, k=3)
+# Extract the probability that Case 39 is an outlier
+prob.39 = outliers$prob.outlier[39]
+prob.39
+```
+
+We see that this case has an extremely high probability of 0.992 of being more an outlier, that is, the error is greater than $k=3$ standard deviations, based on the fitted model and data. 
+
+
+The probability of no outliers if outliers have errors greater than 3 standard deviation is
+
+```{r}
+n = nrow(bodyfat)
+# probability of no outliers if outliers have errors greater than 3 standard deviation
+prob = (1 - (2 * pnorm(-3))) ^ n
+prob
+```
+
+
+The probability of getting at least 1 outlier is 
+
+```{r}
+# probability of at least one outlier
+prob.least1 = 1 - (1 - (2 * pnorm(-3))) ^ n
+prob.least1
+```
+
+
+With $n=252$  the probability of at least one outlier is much larger than say the marginal probability that one point is an outlier of 0.05. So we would expect that there will be at least one point where the error is more than 3 standard deviations from zero almost 50% of the time. Rather than fixing $k$ we can fix the prior probability of no outliers $P(No-outlier) =1-P^n$ to be say 0.95, and back solve the value of  $k$ using the qnorm function. 
+
+
+```{r}
+#Value of K for the prior probability of no outliers is 0.95
+new_k = qnorm(0.5 + 0.5 * 0.95 ^ (1 / n))
+new_k
+```
+
+After adjusting $k$ the prior probability of no outliers is 0.95, we examine Case 39 again under this  $k$.
+
+```{r}
+# Calculate probability of being outliers using new k value
+outliers.new = Bayes.outlier(bodyfat.lm, k = new_k)
+
+# Extract the probability of Case 39
+prob.new.39 = outliers.new$prob.outlier[39]
+prob.new.39
+```
+
+The posterior probability of Case 39 being an outlier is about 0.685. While this is not strikingly large, it is much larger than the marginal prior probability of for a value lying about 3.7$sigma$ away from 0, if we assume the error $\epsilon _j$ is normally distributed with mean 0 and variance $\sigma^2$. 
+ 
+```{r}
+2 * pnorm(-new_k)
+```
+
+There is a substantial probability that Case 39 is an outlier. 
+
+If you do view it as an outlier, what are your options? One option is to investigate the case and determine if the data are input incorrectly, and fix it. Another option is when you cannot confirm there is a data entry error, you may delete the observation from the analysis and refit the model without the case.
+
+
+
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+## 6.3 Bayesian Multiple Linear Regression
+
+
+### 6.3.1 The Model
+
+To illustrate the idea, we use the data set on kid’s cognitive scores that we examined earlier. We predicted the value of the kid’s cognitive score from the mother’s high school status, mother’s IQ score, whether or not the mother worked during the first three years of the kid’s life, and the mother’s age. We set up the model as follows
+
+$$
+\begin{equation}
+y_{\text{score},i} = \alpha + \beta_1 x_{\text{hs},i} + \beta_2 x_{\text{IQ},i} + \beta_3x_{\text{work},i} + \beta_4 x_{\text{age},i} + \epsilon_i, \quad i = 1,\cdots, n.
+\end{equation}
+$$
+
+Here $y_{\text{score},i}$  is the $i$th kid’s cognitive score. $x_{\text{hs},i}$, $x_{\text{IQ},i}$,  $x_{\text{work},i}$ and $x_{\text{age},i}$, represent the high school status, the IQ score, the work status during the first three years of the kid’s life, and the age of the $i$th kid’s mother. $\epsilon_i$  is the error term. $n$ denotes the number of observations in this data set. 
+
+For better analyses, one usually centers the variable, which ends up getting the following form.
+
+$$\begin{equation}
+y_{\text{score}, i} = \beta_0 + \beta_1 (x_{\text{hs},i}-\bar{x}_{\text{hs}}) + \beta_2 (x_{\text{IQ},i}-\bar{x}_{\text{IQ}}) + \beta_3(x_{\text{work},i}-\bar{x}_{\text{work}}) + \beta_4 (x_{\text{age},i}-\bar{x}_{\text{age}}) + \epsilon_i.
+\end{equation}$$
+
+Under this tranformation, the coefficients $\beta_1, \beta_2, \beta_3, \beta_4$, that are in front of the variables, are unchanged. However, the constant coefficient $\beta_0$ is no longer the constant coefficient $\alpha$. Instead, under the assumption that $\epsilon_i$ is independently, identically normal, $\hat{\beta}_0$ is the sample mean of the response variable $Y_{score}$. This provides more meaning to $\beta_0$ as this is the mean of  $Y$ when each of the predictors is equal to their respective means.  Moreover, it is more convenient to use this “centered” model to derive analyses. The R codes in the `BAS` package are based on this form.
+
+### 6.3.2 Data Pre-processing
+
+We can download the data set from Gelman’s website and read the summary information of the data set using the `read.dta` function in the `foreign` package. 
+
+```{r}
+library(foreign)
+cognitive = read.dta("http://www.stat.columbia.edu/~gelman/arm/examples/child.iq/kidiq.dta")
+summary(cognitive)
+```
+
+From the summary statistics, variables `mom_hs` and `mom_work` should be considered as categorical variables. We transform them into indicator variables where `mom_work = 1` if the mother worked for 1 or more years, and `mom_hs = 1` indicates the mother had more than a high school education.
+
+The code is as below:
+
+```{r}
+cognitive$mom_work = as.numeric(cognitive$mom_work > 1)
+cognitive$mom_hs = as.numeric(cognitive$mom_hs > 0)
+
+# Modify column names of the data set
+colnames(cognitive) = c("kid_score", "hs", "IQ", "work", "age")
+```
+
+
+### 6.3.3 Specify Bayesian Prior Distributions
+
+For Bayesian inference, we need to specify a prior distribution for the error term $\epsilon_i$. Since each kid’s cognitive score $y_{\text{score},i}$ is continuous, we assume that $\epsilon_i$ is independent, and identically distributed with the Normal distribution 
+
+$$\epsilon_i \sim Normal(0,\sigma^2) $$
+
+where $\sigma^2$ is the commonly shared variance of all observations.
+
+We will also need to specify the prior distributions for all the coefficients $\beta_0$, $\beta_1$, $\beta_2$, $\beta_3$, and $\beta_4$. 
+
+
+An informative prior, which assumes that the $\beta´s$ follow the **multivariate normal distribution** with covariance matrix $\sigma^2 \Sigma_0$ can be used. 
+
+
+We may further impose the **inverse Gamma distribution** to $\sigma^2$, to complete the hierachical model 
+
+$$\beta_0, \beta_1, \beta_2, \beta_3, \beta_4 | \sigma^2 \sim Normal ((b_0,b_1.b_2,b_3,b_4)^T, \sigma^2 \Sigma_0)$$
+
+$$ \frac{1}{\sigma^2} \sim Gamma (\frac{v_0}{2}, \frac{v_0\sigma_0^2}{2})$$
+
+
+This gives us the multivariate Normal-Gamma conjugate family, with hyperparameters $b_0, b_1, b_2, b_3, b_4, \Sigma_0, v_0$ and $\sigma^2$. 
+
+
+For this prior, we will need to specify the values of all the hyperparameters. 
+
+This elicitation can be quite involved, especially when we do not have enough prior information about the variances, covariances of the coefficients and other prior hyperparameters.
+
+Therefore, we are going to adopt the noninformative reference prior, which is a limiting case of this multivariate Normal-Gamma prior.
+
+The reference prior in the multiple linear regression model is similar to the reference prior we used in the simple linear regression model.
+
+The prior distribution of all the coefficients $\beta´s$  conditioning on $\sigma^2$  is the uniform prior, and the prior of $\sigma^2$ is proportional to its reciprocal
+
+$$p(\beta_0,\beta_1,\beta_2,\beta_3,\beta_4~|~\sigma^2) \propto 1,\qquad\quad p(\sigma^2) \propto \frac{1}{\sigma^2}.$$
+Under this reference prior, the marginal posterior distributions of the coefficients $\beta´s$, are parallel to the ones in simple linear regression. 
+
+
+
+The marginal posterior distribution of $\beta_j$ is the Student’s $t$-distributions with centers given by the frequentist OLS estimates $\hat{\beta}_j$, scale parameter given by the standard error $(se_{\beta_j})^2$ obtained from the OLS estimates 
+
+$$\beta_j~|~y_1,\cdots,y_n ~\sim ~\textsf{t}(n-p-1,\ \hat{\beta}_j,\ (\text{se}_{\beta_j})^2),\qquad j = 0, 1, \cdots, p.$$
+
+The degree of freedom of these $t$-distributions is $n-p-1$, where  $p$ is the number of predictor variables.
+
+In the kid’s cognitive score example, $p=4$. 
+
+The posterior mean, $\hat{\beta}_j$, is the center of the $t$-distribution of $\beta_j$, which is the same as the OLS estimates of $\beta_j$.
+
+
+The posterior standard deviation of $\beta_j$, which is the square root of the scale parameter of the $t$-distribution, is $se_{\beta_j}$, the standard error of $\beta_j$ under the OLS estimates. 
+
+That means, under the reference prior, we can easily obtain the posterior mean and posterior standard deviation from using the `lm function`, since they are numerically equivalent to the counterpart of the frequentist approach.  
+
+
+### 6.3.4 Fitting the Bayesian Model
+
+To gain more flexibility in choosing priors, we will instead use the `bas.lm` function in the `BAS` library, which allows us to specify different model priors and coefficient priors.
+
+```{r}
+# Import library
+library(BAS)
+
+# Use bas.lm to run regression model
+cog.bas = bas.lm(kid_score ~ ., data = cognitive, prior = "BIC", 
+                 modelprior = Bernoulli(1), 
+                 include.always = ~ ., 
+                 n.models = 1)
+```
+
+The above `bas.lm` function uses the same model formula as in the `lm`. It first specifies the response and predictor variables, a data argument to provide the data frame.  
+
+The additional arguments further include the prior on the coefficients. 
+
+
+We use "`BIC`" here to indicate that the model is based on the **noninformative reference prior**. (We will explain in the later section why we use the name "`BIC`".)
+
+Since we will only provide one model, which is the one that includes all variables, we place all model prior probability to this exact model.This is specified in the `modelprior = Bernoulli(1)` argument.
+
+Because we want to fit using all variables, we use `include.always = ~ .` to indicate that the intercept and all 4 predictors are included. 
+
+
+The argument `n.models = 1` fits just this one model.
+
+### 6.3.5 Posterior Means and Posterior Standard Deviations
+
+
+Similar to the OLS regression process, we can extract the posterior means and standard deviations of the coefficients using the `coef` function
+
+```{r}
+cog.coef = coef(cog.bas)
+cog.coef
+```
+
+
+From the last column in this summary, we see that the probability of the coefficients to be non-zero is always 1. This is because we specify the argument `include.always = ~ .` to force the model to include all variables. 
+
+
+
+Notice on the first row we have the statistics of the `Intercept` $\beta_0$. The posterior mean of $\beta_0$  is 86.8, which is completely different from the original $y$-intercept of this model under the frequentist OLS regression. 
+
+
+As we have stated previously, we consider the “centered” model under the Bayesian framework. Under this “centered” model and the reference prior, the posterior mean of the `Intercept` $\beta_0$ is now the sample mean of the response variable $Y_{score}$.
+
+
+We can visualize the coefficients $\beta_1,\beta_2,\beta_3,\beta_4$ using the `plot` function. We use the `subset` argument to plot only the coefficients of the predictors. 
+
+```{r}
+par(mfrow = c(2, 2), col.lab = "darkgrey", col.axis = "darkgrey", col = "darkgrey")
+plot(cog.coef, subset = 2:5, ask = F)
+```
+
+These distributions all center the posterior distributions at their respective OLS estimates $\hat{\beta}_j$, with the spread of the distribution related to the standard errors $se_{\beta_j}$. 
+
+Recall, that `bas.lm` uses centered predictors so that the intercept is always the sample mean.
+
+### 6.3.6 Credible Intervals Summary
+
+We can also report the posterior means, posterior standard deviations, and the 95% credible intervals of the coefficients of all 4 predictors, which may give a clearer and more useful summary. The `BAS` library provides the method `confint` to extract the credible intervals from the output `cog.coef`. 
+
+If we are only interested in the distributions of the coefficients of the 4 predictors, we may use the `parm` argument to restrict the variables shown in the summary
+
+```{r}
+confint(cog.coef, parm = 2:5)
+```
+
+All together, we can generate a summary table showing the posterior means, posterior standard deviations, the upper and lower bounds of the 95% credible intervals of all coefficients $\beta_0, \beta_1,\beta_2,\beta_3$ and $\beta_4$ 
+
+
+```{r}
+out = confint(cog.coef)[, 1:2]  
+
+# Extract the upper and lower bounds of the credible intervals
+names = c("posterior mean", "posterior std", colnames(out))
+out = cbind(cog.coef$postmean, cog.coef$postsd, out)
+colnames(out) = names
+
+round(out, 2)
+```
+
+
+As in the simple linear aggression, the posterior estimates from the reference prior, that are in the table, are equivalent to the numbers reported from the `lm` function in R, or using the confident function in the OLS estimates. 
+
+These intervals are centered at the posterior mean $\hat{\beta}_j$ with width given by the appropriate $t$ quantile with  $n-p-1$ degrees of freedom times the posterior standard deviation $se_{\beta_j}$. 
+
+**The primary difference is the interpretation of the intervals. **
+
+For example, given this data, we believe there is a 95% chance that the kid’s cognitive score increases by 0.44 to 0.68 with one additional increase of the mother’s IQ score. 
+
+
+The mother’s high school status has a larger effect where we believe that there is a 95% chance the kid would score of 0.55 up to 9.64 points higher if the mother had three or more years of high school. 
+
+The credible intervals of the predictors `work` and `age` include 0, which implies that we may improve this model so that the model will accomplish a desired level of explanation or prediction with fewer predictors. 
+
+We will explore model selection using **Bayesian Information Criterion** in the next chapter. 
+
+
+## 6.4 Summary
+
+We have provided Bayesian analyses for both simple linear regression and multiple linear regression using the default reference prior.  
+
+We have seen that, under this reference prior, the marginal posterior distribution of the coefficients is the Student’s $t$-distribution. Therefore, the posterior mean and posterior standard deviation of any coefficients are numerically equivalent to the corresponding frequentist OLS estimate and the standard error. 
+
+
+This has provided us a base line analysis of Bayesian approach, which we can extend later when we introduce more different coefficient priors. 
+
+The difference is the interpretation. Since we have obtained the distribution of each coefficient, we can construct the credible interval, which provides us the probability that a specific coefficient falls into this credible interval. 
+
+We have also used the posterior distribution to analyze the probability of a particular observation being an **outlier**. We defined such probabiilty to be the probability that the error term is $k$ standard deviations away from 0.  This probability is based on information of all data, instead of just the observation itself. 
+
+
+
+
+## References
+
+
+Chaloner, Kathryn, and Rollin Brant. 1988. “A Bayesian Approach to Outlier Detection and Residual Analysis.” Biometrika 75 (4): 651–59.
+
+Hoff, Peter D. 2009. A First Course in Bayesian Statistical Methods. Springer Science & Business Media. 
+
+
+
+
+
+# Bayesian Model Choice
+
+## 7.1 Bayesian Information Criterion (BIC)
+
+### 7.1.1 Definition of BIC
+
+### 7.1.2 Backward Elimination with BIC
+
+We will use the kid’s cognitive score data set `cognitive` as an example. We first read in the data set from Gelman’s website and transform the data types of the two variables `mom_work` and `mom_hs`, like what we did in Section 6.3.
+
+
+```{r}
+# Load the library in order to read in data from website
+library(foreign)    
+
+# Read in cognitive score data set and process data tranformations
+cognitive = read.dta("http://www.stat.columbia.edu/~gelman/arm/examples/child.iq/kidiq.dta")
+
+cognitive$mom_work = as.numeric(cognitive$mom_work > 1)
+cognitive$mom_hs =  as.numeric(cognitive$mom_hs > 0)
+colnames(cognitive) = c("kid_score", "hs","IQ", "work", "age")
+```
+
+
+We start with the full model, with all possible predictors: `hs`, `IQ`, `work`, and `age`. We will drop one variable at a time and record all BICs. Then we will choose the model with the smallest BIC. We will repeat this process until none of the models yields a decrease in BIC. We use the `step` function in R to perform the BIC model selection. Notice the default value of the `k` argument in the `step` function is `k=2`, which is for the AIC score. For BIC, `k` should be `log(n)` correspondingly.
+
+
+
+```{r}
+# Compute the total number of observations
+n = nrow(cognitive)
+
+# Full model using all predictors
+cog.lm = lm(kid_score ~ ., data=cognitive)
+
+# Perform BIC elimination from full model
+# k = log(n): penalty for BIC rather than AIC
+cog.step = step(cog.lm, k=log(n))   
+```
+
+In the summary chart, the `AIC` should be interpreted as BIC, since we have chosen to use the BIC expression where $k=log(n)$. 
+
+From the full model, we predict the kid’s cognitive score from mother’s high school status, mother’s IQ score, mother’s work status and mother’s age. The BIC for the full model is 2541.1. 
+
+At the **first step**, we try to remove each variable from the full model to record the resulting new BIC. 
+
+From the summary statistics, we see that removing variable `age` results in the smallest BIC. But if we try to drop the `IQ` variable, this will increase the BIC, which implies that IQ would be a really important predictor of `kid_score`. 
+
+Comparing all the results, we drop the `age` variable at the **first step**. After dropping age, the new BIC is 2535.4.
+
+At the **next step**, we see that dropping `work` variable will result in the lowest BIC, which is 2530.6. 
+
+**Finally**, when we try dropping either `hs` or `IQ`, it will result in higher BIC than 2530.6. 
+
+This suggests that we have reached the best model.  
+
+This model predicts kid’s cognitive score using mother’s high school status and mother’s IQ score.
+
+However, using the adjusted  $R^2$, the best model would be the one including not only `hs` and `IQ` variables, but also mother’s work status, `work`. In general, using BIC leads to fewer variables for the best model compared to using adjusted $R^2$ or $AIC$.
+
+
+We can also use the `BAS` package to find the best BIC model without taking the stepwise backward process.
+
+```{r}
+# Import library
+library(BAS)
+
+# Use `bas.lm` to run regression model
+cog.BIC = bas.lm(kid_score ~ ., data = cognitive,
+                 prior = "BIC", modelprior = uniform())
+
+cog.BIC
+```
+
+Here we set the `modelprior` argument as `uniform()` to assign equal prior probability for each possible model.
+
+The `logmarg` information inside the `cog.BIC` summary list records the log of marginal likelihood of each model after seeing the data $ln(p(data|M))$. Recall that this is approximately proportional to negative BIC when the sample size  **n** is large. 
+
+$$BIC \approx -2ln(p(data|M))$$
+
+We can use this information to retrieve the model with the largest log of marginal likelihood, which corresponds to the model with the smallest BIC.
+
+
+```{r}
+# Find the index of the model with the largest logmarg
+best = which.max(cog.BIC$logmarg)
+
+# Retrieve the index of variables in the best model, with 0 as the index of the intercept
+bestmodel = cog.BIC$which[[best]]
+bestmodel
+```
+
+```{r}
+# Create an indicator vector indicating which variables are used in the best model
+# First, create a 0 vector with the same dimension of the number of variables in the full model
+bestgamma = rep(0, cog.BIC$n.vars) 
+
+# Change the indicator to 1 where variables are used
+bestgamma[bestmodel + 1] = 1  
+
+bestgamma
+```
+
+
+
+From the indicator vector `bestgamma` we see that only the intercept (indexed as 0), mother’s high school status variable `hs` (indexed as 1), and mother’s IQ score `IQ` (indexed as 2) are used in the best model, with 1’s in the corresponding slots of the 5-dimensional vector $(1,1,1,0,0)$ 
+
+
+### 7.1.3 Coefficient Estimates Under Reference Prior for Best BIC Model
+
+The best BIC model **M** can be set up as follows and we have adopted the “centered” model convention for convenient analyses
+
+$$y_{\text{score},i} = \beta_0 + \beta_1(x_{\text{hs},i} - \bar{x}_{\text{hs}, i})+\beta_2(x_{\text{IQ},i}-\bar{x}_{\text{IQ}})+\epsilon_i,\qquad \quad i = 1,\cdots, n$$
+
+```{r}
+# Fit the best BIC model by imposing which variables to be used using the indicators
+cog.bestBIC = bas.lm(kid_score ~ ., data = cognitive,
+                     prior = "BIC", n.models = 1,  # We only fit 1 model
+                     bestmodel = bestgamma,  # We use bestgamma to indicate variables 
+                     modelprior = uniform())
+
+# Retrieve coefficients information
+cog.coef = coef(cog.bestBIC)
+
+# Retrieve bounds of credible intervals
+out = confint(cog.coef)[, 1:2]
+
+# Combine results and construct summary table
+coef.BIC = cbind(cog.coef$postmean, cog.coef$postsd, out)
+names = c("post mean", "post sd", colnames(out))
+colnames(coef.BIC) = names
+coef.BIC
+```
+
+Comparing the coefficients in the best model with the ones in the full model (which can be found in Section 6.3), we see that the 95% credible interval for `IQ` variable is the same. However, the credible interval for high school status `hs` has shifted slightly to the right, and it is also slighly narrower, meaning a smaller posterior standard deviation. All credible intervals of coefficients exclude 0, suggesting that we have found a parsimonious model
+
+
+## 7.2 Bayesian Model Uncertainty
+
+### 7.2.1 Model Uncertainty
+
+### 7.2.2 Calculating Posterior Probability in R
+
+Back to the kid’s cognitive score example, we will see how the summary of results using `bas.lm` tells us about the posterior probability of all possible models.
+
+```{r}
+# Import libary
+library(BAS)
+
+# Use `bas.lm` for regression
+cog_bas = bas.lm(kid_score ~ hs + IQ + work + age, 
+                 data = cognitive, prior = "BIC",
+                 modelprior = uniform())
+```
+
+
+
+`cog_bas` is a `bas` object. The usual `print`, `summary`, `plot`, `coef`, `fitted`, `predict` functions are available and can be used on `bas` objects similar to `lm` objects created by the usual `lm` function. From calling
+
+```{r}
+names(cog_bas)
+```
+
+
+
+
+one can see the outputs and analyses that we can extract from a `bas` object.
+
+
+The `bas` object takes the `summary` method
+
+
+
+```{r}
+round(summary(cog_bas), 3)
+```
+The summary table shows us the information of the top 5 models
+
+$P(B!=0|Y)$: Posterior inclusion probability (pip) of each coefficient under data $Y$
+
+$0,1$ in the colum: indicator of whether the variable is included in the model
+
+$BF$: Bayes factor $BF[M_m:M_b]$, where $M_b$ is the model with highest posterior probability
+
+$PostProbs$: Posterior probability of each model
+
+$R2$: R-squared in the ordinary least square (OLS) regression
+
+$dim$: Number of variables (including the intercept) included in the model
+
+$logmarg$: Log of marginal likelihood of the model, which is approximately  $-\frac{1}{2}BIC$
+
+
+All top 5 models suggest to exclude `age` variable and include `IQ` variable. 
+
+
+The first model includes intercept $\beta_0$ and only `hs` and `IQ`, with a posterior probability of about 0.
+
+The model with the 2nd highest posterior probability, which includes only the intercept and the variable `IQ`, has posterior probability of about 0.
+
+Using the `print` method, we obtain the marginal posterior inclusion probability (pip) $p(B_j\neq0)$ of each variable $x_j$
+
+```{r}
+print(cog_bas)
+```
+
+
+## 7.3 Bayesian Model Averaging
+
+
+### 7.3.1 Visualizing Model Uncertainty
+
+```{r}
+image(cog_bas, rotate = F)
+```
+
+
+### 7.3.2 Bayesian Model Averaging Using Posterior Probability
+
+### 7.3.3 Coefficient Summary under BMA
+
+
+
+```{r}
+cog_coef = coef(cog_bas)
+cog_coef
+```
+
+
+Under Bayesian model averaging, the table above provides the posterior mean, the posterior standard deviation, and the posterior inclusion probability (pip) of each coefficient. 
+
+We can also `plot` the posterior distributions of these coefficients to take a closer look at the distributions
+
+```{r}
+#par(mfrow = c(2, 2))
+#plot(cog_coef, subset = c(2:5))
+```
+
+
+
+
+This plot agrees with the summary table we obtained above, which shows that the posterior probability distributions of `work` and `age` have a very large point mass at 0, while the distribution of `hs` has a relatively small mass at 0. There is a slighly little tip at 0 for the variable `IQ`, indicating that the posterior inclusion probability of `IQ` is not exactly 1. However, since the probability mass for `IQ` to be 0 is so small, that we are almost certain that `IQ` should be included under Bayesian model averaging.
+
+
+
+
+
+# Chapter 8 Stochastic Explorations Using MCMC
+
+
+
+
+
+In this chapter, we will discuss stochastic explorations of the model space using Markov Chain Monte Carlo method. This is particularly usefull when the number of models in the model space is relatively large. We will introduce the idea and the algorithm that we apply on the kid’s cognitive score example. Then We will introduce some alternative priors for the coefficients other than the reference priors that we have been focused on. We will demonstrate using Markov Chain Monte Carlo on the crime data set to see how to use this stochastic method to explore the model space and how different priors may lead to different posterior inclusion probability of coefficients. Finally, we will summarize decision making strategies under Bayesian model uncertainty.
+
+## 8.1 Stochastic Exploration
+
+In the last chapter, we explored model uncertainty using posterior probability of each model and Bayesian model averaging based on BIC. We applied the idea on the kid’s cognitive score data set. With 4 predictors, we had $2^4=16$ possible models. Since the total number of models is relatively small, it is easy to enumerate all possible models to obtain Bayesian model averaging results. However, in general we often have data sets with large number of variables, which may lead to long computating time via enumeration. In this section, we will present one of the common stochastic methods, Markov Chain Monte Carlo (MCMC), to explore model spaces and implement Bayesian model averaging to estimate quantities of interest.
+
+
+
+### 8.1.1 Markov Chain Monte Carlo Exploration
+
+Let us assume that we have a pseudo population of possible models that we obtained from all the possible combinations of regression models from the kid’s cognitive score example. We prepare the data set as in Section 6.3 and run `bas.lm` to obtain posterior probability of each model as we did in Section 7.2.
+
+
+
+```{r}
+# Data processing
+library(foreign)
+cognitive = read.dta("http://www.stat.columbia.edu/~gelman/arm/examples/child.iq/kidiq.dta")
+cognitive$mom_work = as.numeric(cognitive$mom_work > 1)
+cognitive$mom_hs =  as.numeric(cognitive$mom_hs > 0)
+colnames(cognitive) = c("kid_score", "hs","IQ", "work", "age") 
+
+# Run regression
+library(BAS)
+cog_bas = bas.lm(kid_score ~ hs + IQ + work + age,
+                prior = "BIC",
+                modelprior = uniform(),
+                data = cognitive)
+```
+
+
+
+
+
+We will use this example to explore the idea of MCMC and generalize it to regression models with much larger model spaces. To explore the models, we may arrange them by their model sizes, the number of predictors plus the intercept, on the  x-axis, and their posterior probabilities on the  y-axis.
+
+```{r}
+library(ggplot2)
+
+# Construct data frame for plotting
+output = data.frame(model.size = cog_bas$size, model.prob = cog_bas$postprobs)
+
+# Plot model size vs mode posterior probability
+ggplot(data = output, aes(x = model.size, y = model.prob)) +
+  geom_point(color = "blue", pch = 17, size = 3) +
+  xlab("model size") + ylab("model posterior probability")
+```
+
+
+We could then take a sample from this population of models with replacement (therefore, some models may be selected more than once in this sample). This process could be done using the `sample` function in R. We hope that the frequency of appearance of a model would be a good approximation of the posterior probability of this model.
+
+
+
+
+## 8.2 Other Priors for Bayesian Model Uncertainty
+
+### 8.2.1 Zellner’s  g-Prior
+ 
+### 8.2.2 Bayes Factor of Zellner’s  g-Prior
+
+Unit Information Prior
+
+Zellner-Siow Cauchly Prior
+
+Hyper- g/n Prior
+
+
+
+### 8.2.3 Kid’s Cognitive Score Example
+
+We apply these priors on the kid’s cognitive score example and compare the posterior probability that each coefficient $\beta_i, i=1,2,3,4$ to be non-zero. We first read in data and store the size of the data into n. We will use this n later, when setting priors for n/g. 
+
+
+```{r}
+library(foreign)
+cognitive = read.dta("http://www.stat.columbia.edu/~gelman/arm/examples/child.iq/kidiq.dta")
+cognitive$mom_work = as.numeric(cognitive$mom_work > 1)
+cognitive$mom_hs =  as.numeric(cognitive$mom_hs > 0)
+colnames(cognitive) = c("kid_score", "hs","IQ", "work", "age") 
+
+# Extract size of data set
+n = nrow(cognitive)
+```
+
+
+We then fit the full model using different priors. Here we set model prior to be `uniform()`, meaning each model has equal prior probability.
+
+
+
+```{r}
+library(BAS)
+# Unit information prior
+cog.g = bas.lm(kid_score ~ ., data=cognitive, prior="g-prior", 
+               a=n, modelprior=uniform())
+# a is the hyperparameter in this case g=n
+
+# Zellner-Siow prior with Jeffrey's reference prior on sigma^2
+cog.ZS = bas.lm(kid_score ~ ., data=cognitive, prior="JZS", 
+               modelprior=uniform())
+
+# Hyper g/n prior
+cog.HG = bas.lm(kid_score ~ ., data=cognitive, prior="hyper-g-n", 
+                a=3, modelprior=uniform()) 
+# hyperparameter a=3
+
+# Empirical Bayesian estimation under maximum marginal likelihood
+cog.EB = bas.lm(kid_score ~ ., data=cognitive, prior="EB-local", 
+                a=n, modelprior=uniform())
+
+# BIC to approximate reference prior
+cog.BIC = bas.lm(kid_score ~ ., data=cognitive, prior="BIC", 
+                 modelprior=uniform())
+
+# AIC
+cog.AIC = bas.lm(kid_score ~ ., data=cognitive, prior="AIC", 
+                 modelprior=uniform())
+```
+
+
+
+Here `cog.g` is the model corresponding to the unit information prior $g=n$. `cog.ZS` is the model under the Zellner-Siow cauchy prior with Jeffrey’s reference prior on $\sigma^2$. `cog.HG` gives the model under the hyper-$g/n$ prior. `cog.EB` is the empirical Bayesian estimates which maximizes the marginal likelihood. `cog.BIC` and `cog.AIC` are the ones corresponding to using BIC and AIC for marginal likelihood approximation.
+
+In order to compare the posterior inclusion probability (pip) of each coefficient, we group the results $p(\beta_i\neq0)$ obtained from the `probne0` attribute of each model for later comparison
+
+
+
+```{r}
+probne0 = cbind(cog.BIC$probne0, cog.g$probne0, cog.ZS$probne0, cog.HG$probne0,
+                cog.EB$probne0, cog.AIC$probne0)
+
+colnames(probne0) = c("BIC", "g", "ZS", "HG", "EB", "AIC")
+rownames(probne0) = c(cog.BIC$namesx)
+```
+
+We can compare the results by printing the matrix `probne0` that we just generated. If we want to visualize them to get a clearer idea, we may plot them using bar plots.
+
+
+
+```{r}
+library(ggplot2)
+
+# Generate plot for each variable and save in a list
+P = list()
+for (i in 2:5){
+  mydata = data.frame(prior = colnames(probne0), posterior = probne0[i, ])
+  mydata$prior = factor(mydata$prior, levels = colnames(probne0))
+  p = ggplot(mydata, aes(x = prior, y = posterior)) +
+    geom_bar(stat = "identity", fill = "blue") + xlab("") +
+    ylab("") + 
+    ggtitle(cog.g$namesx[i])
+  P = c(P, list(p))
+}
+
+library(cowplot)
+do.call(plot_grid, c(P))
+```
+
+
+above, the  x-axis lists all the prior distributions we consider, and the bar heights represent the posterior inclusion probability of each coefficient, i.e., $p(\beta_i\neq0)$
+
+
+We can see that mother’s IQ score is included almost as probability 1 in all priors. So all methods agree that we should include variable `IQ`. Mother’s high school status also has probability of more than 0.5 in each prior, suggesting that we may also consider including the variable `hs`. However, mother’s work status and mother’s age have much lower posterior inclusion probability in all priors. From left to right in each bar plot, we see that method `BIC` is the most conservative method (meaning it will exclude the most variables), while `AIC` is being the less conservative method.
+
+
+
+
+
+
+
